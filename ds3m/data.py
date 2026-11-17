@@ -40,7 +40,7 @@ def load_toy(window=20, test_len=500):
     return splits, (mean, std), y[-test_len:], d[-test_len:]
 
 def load_spy(window=20, train_end="2015-12-31", valid_end="2018-12-31",
-             path="data/spy_close.csv"):
+             path="data/spy_close.csv", target="test"):
     close = pd.read_csv(path, index_col="Date", parse_dates=True)["SPY"]
     returns = np.log(close).diff().dropna()
     dates = returns.index
@@ -50,7 +50,11 @@ def load_spy(window=20, train_end="2015-12-31", valid_end="2018-12-31",
     n_valid = int((dates <= valid_end).sum())
     train = y[:n_train]
     valid = y[n_train:n_valid]
-    test = y[n_valid - window - 1:-1]
+    if target == "test":
+        start, end = n_valid, len(y)
+    else:
+        start, end = n_train, n_valid
+    test = y[start - window - 1:end - 1]
 
     mean, std = train.mean(), train.std()
 
@@ -60,7 +64,7 @@ def load_spy(window=20, train_end="2015-12-31", valid_end="2018-12-31",
         splits[name] = (torch.tensor(X, dtype=torch.float32),
                         torch.tensor(Y, dtype=torch.float32))
 
-    return splits, (mean, std), y[n_valid:], dates[n_valid:]
+    return splits, (mean, std), y[start:end], dates[start:end]
 
 if __name__ == "__main__":
     splits, (mean, std), y_test, d_test = load_toy()

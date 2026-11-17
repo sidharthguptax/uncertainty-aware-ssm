@@ -400,22 +400,45 @@ For reference, C1 (official recipe): seeds 1, 2, 4, 5 have p ≈ 0.000 on nearly
 
 - **Seed sensitivity is removed.** Crash coverage ranges 0.74–0.84 across seeds (std 0.038, against 0.211 for C1).
 - **Trained stably, DS³M matches GARCH in the stress periods** (crash 0.80 vs 0.80; 2022 0.86 vs 0.865) but does not beat it.
-- **DS³M's intervals are systematically too narrow, but correctly timed.** Overall miss rates 0.110–0.137 (Kupiec rejects in 3 of 5 seeds, one borderline), while Christoffersen passes in all 5 seeds: misses are spread evenly rather than clustered. The model tracks *when* volatility changes; the *level* of its intervals is too low. This is a different failure from GARCH (calibrated on average, under-covers only in the crash) and from C1 (clustered misses from near-constant intervals).
-- The same under-coverage appeared in-domain on the toy data (0.84–0.88, Section 3), so it appears to be a property of DS³M's predictive intervals rather than of financial data.
-- **Hypothesis (untested):** the emission noise is learned with $z_t$ drawn from the posterior, which has seen $y_t$; at forecast time $z_{T+1}$ comes from the prior, which has not. The emission's std may therefore be calibrated for a better-informed $z$ than forecasting provides, producing intervals that are too narrow.
-- **Implication:** a level error is what conformal recalibration corrects. This motivates DS³M + split conformal and DS³M + ACI (RQ1). Prediction to test: the correction should work better for DS³M (constant offset) than for GARCH (a crash-local timing error).
+- **In the test period, DS³M's intervals are too narrow but their misses are not clustered.** Overall miss rates 0.110–0.137 (Kupiec rejects in 3 of 5 seeds, one borderline), while Christoffersen passes in all 5 seeds: misses are spread evenly rather than clustered. The model tracks *when* volatility changes. This differs from GARCH (calibrated on average over the test period, under-covers only in the crash) and from C1 (clustered misses from near-constant intervals).
+- **Correction (see the calibration-period results below):** an earlier version of this section described the test-period under-coverage as a constant level offset, a fixed property of DS³M's intervals. That is not supported: in 2016–2018 the same models *over*-cover. The miss rate depends on the period.
+- On the toy data DS³M also under-covered (0.84–0.88, Section 3). Whether this reflects a systematic property of its intervals or the particular test segments is now an open question.
+- **Hypothesis, weakened:** that the emission noise, learned with $z_t$ drawn from the posterior (which has seen $y_t$), is too small for prior-sampled $z_{T+1}$ at forecast time. If that were the main effect, intervals would be too narrow in every period; the calibration-period over-coverage argues against it.
 - **Regime usage:** the majority-vote metric reports one regime in 4 of 5 seeds, yet both regimes' emission networks are alive in every seed and no $\Gamma$ diagonal is at the floor. The metric cannot distinguish an unused regime from an occasionally used one; posterior regime probabilities over the test period are needed before drawing conclusions about SPY's regime structure.
 
 Caveats: 5 seeds × 4 tests gives many p-values; the consistent patterns (overall under-coverage, absence of clustering) carry more weight than individual rejections. Validation-loss comparison uses printed values (every 10 epochs).
+
+### Calibration-period forecasts (2016–2018)
+
+Script: `experiments/spy/calib_forecasts.py`. Results: `experiments/spy/calib_garch_{normal,t}.csv`, `experiments/spy/calib_wide_nokl_seed{1..5}.csv`. These forecasts cover every trading day of the validation years (754 days), with parameters fitted on 2000–2015 only; they serve as the calibration set for the conformal methods.
+
+| Model | 90% coverage, 2016–2018 | 90% coverage, test (2019–2024) |
+|---|---|---|
+| GARCH-N | 0.944 | 0.909 |
+| GARCH-t | 0.932 | 0.905 |
+| C5 seed 1 | 0.918 | 0.874 |
+| C5 seed 2 | 0.930 | 0.873 |
+| C5 seed 3 | 0.920 | 0.890 |
+| C5 seed 4 | 0.936 | 0.885 |
+| C5 seed 5 | 0.895 | 0.863 |
+
+All models over-cover in 2016–2018, one of the calmest stretches in SPY's history, and cover less in the test period, which contains the COVID crash and 2022. For C5 the shift crosses the nominal level: too wide in calibration, too narrow in test.
+
+### Prediction for the conformal experiment, recorded before it is run
+
+- **Split conformal** learns a single correction from 2016–2018. Because every model over-covers there, it will *narrow* the intervals, so test-period coverage is expected to get **worse** for both DS³M and GARCH. Split conformal's guarantee requires the calibration and test periods to be exchangeable; 2016–2018 and 2019–2024 plainly are not.
+- **ACI** updates online from test-period outcomes and does not assume exchangeability, so it is expected to bring test-period coverage back towards 0.90, overall and (more slowly) in the stress periods.
+- If observed, this ordering — split conformal worse, ACI better — is a direct demonstration of the exchangeability failure under regime change that motivates the thesis.
+- This replaces the earlier prediction (now withdrawn) that conformal correction would work better for DS³M than for GARCH because of a constant offset.
 
 ---
 
 ## Open questions and pending experiments
 
 - **Ablation C6 (`stable_nokl`, running)** — closes the ablation (Section 10). Then select a configuration by the pre-specified criteria.
-- **Conformal recalibration** of the selected DS³M configuration and of GARCH: split conformal (calibrated on 2016–2018) and ACI (online). Requires validation-period forecasts. Conformity score: distance from the interval centre in units of the interval half-width.
+- **Conformal recalibration** of the selected DS³M configuration and of GARCH: split conformal (calibrated on 2016–2018) and ACI (online). Calibration-period forecasts are now available (Section 11). Conformity score: distance from the interval centre in units of the interval half-width.
 - **Regime usage:** posterior regime probabilities over the test period, to replace the majority-vote collapse metric.
-- **Narrow-interval hypothesis** (Section 11): test whether emission noise learned under posterior $z_t$ is too small for prior-sampled $z_{T+1}$.
+- **Narrow-interval hypothesis** (Section 11, weakened by the calibration-period over-coverage): test whether emission noise learned under posterior $z_t$ is too small for prior-sampled $z_{T+1}$; low priority.
 - Verify the dead-ReLU mechanism for toy seed 5.
 - **Regime collapse:** is it robust? Variants to test — longer training to convergence; the paper's $\Gamma$ parameterisation without the 0.5 floor; $K = 3$ and $K = 4$ (classical Markov-switching studies find 2–4 regimes for equity returns: Turner, Startz & Nelson 1989; Ang & Bekaert 2002; Guidolin & Timmermann 2005, 2007; Maheu, McCurdy & Song 2012). $K$ to be chosen on validation predictive log-likelihood only.
 - **ACI / AgACI** (Gibbs & Candès 2021; Zaffran et al. 2022) on DS³M and GARCH: does online adjustment repair crash-period coverage? Requires saving DS³M's Monte Carlo samples.

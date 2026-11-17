@@ -6,17 +6,19 @@ from experiments.spy.evaluate_spy import PERIODS
 
 close = pd.read_csv("data/spy_close.csv", index_col="Date", parse_dates=True)["SPY"]
 r = 100 * np.log(close).diff().dropna()
-test = r.loc["2019-01-01":]
 
 
-def garch_forecasts(dist):
+def garch_forecasts(dist, start="2019-01-01", end=None):
+    target = r.loc[start:end]
+    origin = r.index[r.index.get_loc(target.index[0]) - 1]
+
     am = arch_model(r, mean="Constant", vol="GARCH", p=1, q=1, dist=dist)
     res = am.fit(last_obs="2016-01-01", disp="off")
-    fc = res.forecast(horizon=1, start="2018-12-31", reindex=False)
+    fc = res.forecast(horizon=1, start=origin, reindex=False)
 
-    mu = fc.mean["h.1"].values[:-1]
-    sigma = np.sqrt(fc.variance["h.1"].values[:-1])
-    assert len(mu) == len(test)
+    mu = fc.mean["h.1"].values[:len(target)]
+    sigma = np.sqrt(fc.variance["h.1"].values[:len(target)])
+    assert len(mu) == len(target)
 
     if dist == "normal":
         q_lo, q_hi = -1.6449, 1.6449
@@ -24,12 +26,12 @@ def garch_forecasts(dist):
         q_lo, q_hi = am.distribution.ppf([0.05, 0.95], [res.params["nu"]])
 
     print(f"GARCH-{dist} parameters:\n{res.params.round(4)}\n")
-    y = test.values / 100
+    y = target.values / 100
     lo = (mu + q_lo * sigma) / 100
     hi = (mu + q_hi * sigma) / 100
     return pd.DataFrame({"y": y, "mean": mu / 100, "lo": lo, "hi": hi,
                          "covered": (y >= lo) & (y <= hi), "width": hi - lo},
-                        index=test.index)
+                        index=target.index)
 
 
 if __name__ == "__main__":
