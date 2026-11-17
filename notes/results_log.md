@@ -552,23 +552,82 @@ C5 + ACI by seed — crash: 0.84, 0.84, 0.86, 0.84, 0.88; 2022: 0.888, 0.896, 0.
 **Comparison in the stress periods**
 - **COVID crash:** C5 + ACI 0.852 ± 0.018 against GARCH + ACI 0.78 (N) and 0.80 (t). All five C5 seeds (0.84–0.88) exceed both GARCH variants. GARCH-N + ACI is *worse* than raw GARCH-N in the crash (0.80 → 0.78).
 - **2022:** C5 + ACI 0.891 ± 0.005 against 0.876 / 0.880.
-- **At essentially equal mean width** (0.035 against 0.034): DS³M + ACI does not buy coverage with wider intervals; it allocates width better across calm and turbulent days.
+- **At essentially equal mean width over the whole test period** (0.035 against 0.034). *Correction (Section 14):* equal width holds on average over 2019–2024, not within each period. The interval score shows that the better width allocation holds in the crash and in calm 2019, but not in 2022, where DS³M's higher coverage came at a cost the interval score judges not worth paying.
 
-**Interpretation.** C5's test-period misses were not clustered (Section 11), so its intervals track *when* volatility changes and ACI only needs to correct the level. GARCH's crash failure is one of timing: the shock arrives faster than ACI with $\gamma = 0.005$ can respond, and ACI had narrowed GARCH's intervals during calm 2019, leaving it worse placed when the crash began. Neither DS³M alone nor GARCH alone is calibrated under regime change; **DS³M trained stably, combined with ACI, gives the best-calibrated intervals in both stress periods at no extra average width** — the DS³M + ACI combination named in RQ1.
+**Interpretation.** C5's test-period misses were not clustered (Section 11), so its intervals track *when* volatility changes and ACI only needs to correct the level. GARCH's crash failure is one of timing: the shock arrives faster than ACI with $\gamma = 0.005$ can respond, and ACI had narrowed GARCH's intervals during calm 2019, leaving it worse placed when the crash began. Neither DS³M alone nor GARCH alone is calibrated under regime change. *Revised in Section 14:* on coverage alone, DS³M + ACI is best in both stress periods; on the interval score, which also accounts for width and miss size, its advantage holds in the abrupt COVID break and in calm periods but not in 2022.
 
 **Caveats**
 - The crash covers 50 days: 0.852 vs 0.80 is about 2.6 more covered days. The consistency across all five seeds carries the weight, but it is one crash.
 - 2022: about 4 more covered days out of 251.
 - $\gamma$ fixed in advance (not tuned); AgACI would remove the choice.
-- No paired statistical comparison yet; coverage alone favours wide intervals, so the interval score (Gneiting & Raftery, 2007), which combines width and miss penalties, with a paired test across days, is needed for a formal comparison.
+- Coverage alone favours wide intervals; the formal comparison with the interval score is in Section 14.
 - 200 Monte Carlo samples per DS³M forecast.
+
+---
+
+## 14. Interval-score comparison: DS³M vs GARCH
+
+Script: `experiments/spy/interval_score_spy.py`; functions `interval_score` and `diebold_mariano` in `ds3m/evaluation.py`. Inputs: the raw and ACI-recalibrated test forecasts of C5 (five seeds) and GARCH-N / GARCH-t.
+
+**Method.**
+- **Interval score** (Gneiting & Raftery, 2007) for a central $(1-\alpha)$ interval $[\ell, u]$ and outcome $y$: $\mathrm{IS}_\alpha = (u - \ell) + \tfrac{2}{\alpha}(\ell - y)\mathbb{1}\{y < \ell\} + \tfrac{2}{\alpha}(y - u)\mathbb{1}\{y > u\}$, with $\alpha = 0.10$ (miss penalty factor 20). Lower is better; a proper scoring rule that combines width and miss size. Reported ×100 (percentage points).
+- **Diebold–Mariano test** (1995) on daily score differences $d_t = \mathrm{IS}^{\mathrm{C5}}_t - \mathrm{IS}^{\mathrm{GARCH}}_t$, with a Newey–West (Bartlett) long-run variance using $\lfloor n^{1/3} \rfloor$ lags by default, and the Harvey–Leybourne–Newbold (1997) small-sample correction ($\mathrm{DM}^* = \mathrm{DM}\sqrt{(n-1)/n}$ for one-step forecasts, compared with $t_{n-1}$). One test per seed; counts of seeds with lower score and of seeds significantly better/worse at 5%.
+
+**Results** (mean interval score ×100; C5 averaged over seeds; HLN-corrected tests)
+
+| Comparison | Period | GARCH | C5 | C5 lower in | Significantly better / worse |
+|---|---|---|---|---|---|
+| Raw vs GARCH-N | Overall | 4.673 | 4.571 | 5/5 | 2 / 0 |
+| | 2019 | 3.504 | 3.183 | 5/5 | 5 / 0 |
+| | COVID crash | 18.775 | 17.225 | 4/5 | 1 / 0 |
+| | 2022 | 6.424 | 6.696 | 0/5 | 0 / 2 |
+| Raw vs GARCH-t | Overall | 4.680 | 4.571 | 5/5 | 2 / 0 |
+| | 2019 | 3.487 | 3.183 | 5/5 | 5 / 0 |
+| | COVID crash | 18.952 | 17.225 | 4/5 | 2 / 0 |
+| | 2022 | 6.445 | 6.696 | 0/5 | 0 / 2 |
+| ACI vs GARCH-N + ACI | Overall | 4.687 | 4.592 | 5/5 | 0 / 0 |
+| | 2019 | 3.417 | 3.211 | 5/5 | 3 / 0 |
+| | COVID crash | 19.386 | **16.827** | **5/5** | **4 / 0** |
+| | 2022 | 6.508 | 6.748 | 0/5 | 0 / 0 |
+| ACI vs GARCH-t + ACI | Overall | 4.694 | 4.592 | 5/5 | 0 / 0 |
+| | 2019 | 3.428 | 3.211 | 5/5 | 3 / 0 |
+| | COVID crash | 19.274 | **16.827** | **5/5** | **3 / 0** |
+| | 2022 | 6.507 | 6.748 | 0/5 | 0 / 1 |
+
+The HLN correction changed few verdicts relative to the uncorrected test (crash raw vs GARCH-N 2 → 1; crash ACI vs GARCH-t 4 → 3; 2022 ACI vs GARCH-N, significantly worse 1 → 0).
+
+**Robustness to the lag choice** (COVID crash, after ACI; DM p-values over 0, 3, 6 and 10 lags):
+
+| Seed | vs GARCH-N + ACI | vs GARCH-t + ACI |
+|---|---|---|
+| 1 | 0.008–0.019 | 0.030–0.067 (borderline) |
+| 2 | 0.004–0.008 | 0.001–0.007 |
+| 3 | 0.005–0.017 | 0.008–0.029 |
+| 4 | 0.58–0.68 (not significant) | 0.72–0.77 (not significant) |
+| 5 | 0.023–0.051 | 0.015–0.030 |
+
+The crash result does not depend on the lag choice: seeds 2, 3 and 5 are significant at every setting, seed 1 is robust against GARCH-N and borderline against GARCH-t, and seed 4 is never significant (its score is lower but not distinguishably so).
+
+**Findings (after ACI, DS³M = selected configuration C5)**
+- **COVID crash:** DS³M has a lower interval score in all five seeds (16.8 against 19.3–19.4, about 13% lower), significantly in 3–4 of 5, robust to the HAC lag choice.
+- **Calm 2019:** DS³M lower in all seeds; significant in 3 of 5.
+- **2022:** GARCH lower in all five seeds; significant in at most one.
+- **Overall:** DS³M slightly lower (about 2%) in all seeds; not significant.
+
+**Hypothesis (from one example of each kind of period).** COVID was an abrupt shock (volatility jumped within days); 2022 was a persistent high-volatility bear market. GARCH's very persistent volatility ($\alpha + \beta \approx 0.99$) suits sustained regimes; DS³M appears better under abrupt breaks and in calm periods. Testing this needs more episodes of each type (other assets or longer histories).
+
+**Caveats**
+- Many tests (2 methods × 2 baselines × 4 periods × 5 seeds); the consistency of direction across seeds carries more weight than individual p-values.
+- One crash and one bear market.
+- Not yet established why DS³M loses in 2022 (wider intervals vs larger misses): to be decomposed.
 
 ---
 
 ## Open questions and pending experiments
 
 - **Ablation closed** (Section 12); selected configuration C5.
-- **Formal comparison of C5 + ACI vs GARCH + ACI:** interval score (Gneiting & Raftery, 2007) with a paired test across days, overall and per period.
+- **Why DS³M loses in 2022:** decompose the interval score into width and miss penalty by period.
+- **Abrupt vs persistent regimes:** test the Section 14 hypothesis on further episodes (other assets, longer histories).
 - **AgACI** (Zaffran et al., 2022) to remove the dependence on $\gamma$.
 - **Regime usage:** posterior regime probabilities over the test period, to replace the majority-vote collapse metric.
 - **Narrow-interval hypothesis** (Section 11, weakened by the calibration-period over-coverage): test whether emission noise learned under posterior $z_t$ is too small for prior-sampled $z_{T+1}$; low priority.
