@@ -6,6 +6,7 @@
 
 import numpy as np
 import torch
+import pandas as pd
 
 OFFICIAL_TOY = "../Deep-Switching-State-Space-Model/data/Toy/"
 
@@ -38,12 +39,46 @@ def load_toy(window=20, test_len=500):
 
     return splits, (mean, std), y[-test_len:], d[-test_len:]
 
+def load_spy(window=20, train_end="2015-12-31", valid_end="2018-12-31",
+             path="data/spy_close.csv"):
+    close = pd.read_csv(path, index_col="Date", parse_dates=True)["SPY"]
+    returns = np.log(close).diff().dropna()
+    dates = returns.index
+    y = returns.values.reshape(-1, 1)
+
+    n_train = int((dates <= train_end).sum())
+    n_valid = int((dates <= valid_end).sum())
+    train = y[:n_train]
+    valid = y[n_train:n_valid]
+    test = y[n_valid - window - 1:-1]
+
+    mean, std = train.mean(), train.std()
+
+    splits = {}
+    for name, part in [("train", train), ("valid", valid), ("test", test)]:
+        X, Y = make_windows((part - mean) / std, window)
+        splits[name] = (torch.tensor(X, dtype=torch.float32),
+                        torch.tensor(Y, dtype=torch.float32))
+
+    return splits, (mean, std), y[n_valid:], dates[n_valid:]
+
 if __name__ == "__main__":
     splits, (mean, std), y_test, d_test = load_toy()
     for name, (X, Y) in splits.items():
         print(f"{name}: X {tuple(X.shape)}, Y {tuple(Y.shape)}")
     print("Train mean/std:", mean, std)
     print("Test targets:", y_test.shape, "| test regimes:", d_test.shape)
+
+    X_test, Y_test = splits["test"]
+    last_known = Y_test[:, -1, 0].numpy() * std + mean
+    print("Windows line up with targets:", np.allclose(last_known[1:], y_test[:-1, 0]))
+
+    print("--- SPY ---")
+    splits, (mean, std), y_test, test_dates = load_spy()
+    for name, (X, Y) in splits.items():
+        print(f"{name}: X {tuple(X.shape)}, Y {tuple(Y.shape)}")
+    print("Train mean/std of daily log returns:", mean, std)
+    print("Test period:", test_dates[0].date(), "to", test_dates[-1].date(), "|", len(y_test), "days")
 
     X_test, Y_test = splits["test"]
     last_known = Y_test[:, -1, 0].numpy() * std + mean
