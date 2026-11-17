@@ -63,3 +63,4 @@ for t in range(2, T+1):
 runs[d[T]].append(length)
 print("Mean duration, regime 0:", np.mean(runs[0]))
 print("Mean duration, regime 1:", np.mean(runs[1]))
+
