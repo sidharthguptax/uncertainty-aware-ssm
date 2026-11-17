@@ -282,6 +282,8 @@ Learned $\Gamma$ (diagonal): seed 1 (0.563, 0.954); seed 2 (0.946, 0.537); seed 
 
 **8 of 10 regime-specific emission networks are dead.**
 
+> Verified in Section 12: the first version of this check fed random $z \sim N(0,1)$; repeated with the model's own posterior $z$ on training, validation and test data, the verdicts are identical. The dead units are zero for every input in every period, and they are already dead at initialisation.
+
 Mechanism: in the official architecture (deviation 3), each network's hidden width equals its output dimension. For a univariate series ($D = 1$) the emission trunk is $\mathrm{Linear}(12 \to 1) \to \mathrm{ReLU} \to \mathrm{Linear}(1 \to 1) \to \mathrm{ReLU}$, so all information passes through a single ReLU unit. If that unit's input is negative for every data point, it outputs zero everywhere: the emission mean and std become constants, and no gradient reaches the encoder, $z_t$ or the regimes beneath it. Whether this happens depends on the random initialisation and early updates — hence the seed lottery. This is the known "dying ReLU" phenomenon in narrow networks.
 
 Interpretation:
@@ -320,7 +322,7 @@ Recorded while configuration C5 was still training on its first seed, before any
 | C3 | `wide` | 16 | official | stabilised | stopped on seed 1 at epoch 20 |
 | C4 | `wide_paperkl` | 16 | paper | stabilised | stopped on seed 1 at epoch 30 |
 | C5 | `wide_nokl` | 16 | none | stabilised | complete (Section 11) |
-| C6 | `stable_nokl` | 1 | none | stabilised | running |
+| C6 | `stable_nokl` | 1 | none | stabilised | complete (Section 12) |
 
 C6 is a control: C5 differs from C2 in both width and KL schedule, so C6 isolates the effect of the KL schedule at the official width (the dead-ReLU mechanism predicts it should not fix the narrow model).
 
@@ -433,10 +435,141 @@ All models over-cover in 2016–2018, one of the calmest stretches in SPY's hist
 
 ---
 
+## 12. Ablation C6, closing the ablation, and the refined diagnosis
+
+### C6: official width, KL weight 1 (`stable_nokl`)
+
+Results: `experiments/spy/summary_stable_nokl_5seeds.json`, `experiments/spy/forecasts_stable_nokl_seed{1..5}.csv`.
+
+Pre-specified criteria:
+
+| Seed | Train loss, epoch 40 | Lowest printed validation loss | Emission networks (regime 0 / regime 1) |
+|---|---|---|---|
+| 1 | 1.459 | 14,918 | dead / dead |
+| 2 | 1.295 | 12,888 | dead / alive but constant |
+| 3 | 1.206 | 11,888 | alive / dead |
+| 4 | 1.415 | 15,413 | dead / dead |
+| 5 | 1.296 | 12,849 | dead / dead |
+
+- **Criterion 1** is met on the letter (4 of 5 below 1.419), but seed 4 passes by 0.004 while showing the stuck pattern (flat at 1.415–1.418 from epoch 20).
+- **Criterion 2 is not met:** in most seeds the emission network of the forecasting regime is dead.
+- **Criterion 3:** mean validation loss ≈ 13,591.
+
+Test-period results (reported, not used for selection):
+
+| Seed | Regimes used | Overall | 2019 | 2020 | COVID crash | 2021 | 2022 | 2023–2024 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 2 | 0.891 | 0.960 | 0.783 | 0.360 | 0.948 | 0.765 | 0.946 |
+| 2 | 2 | 0.922 | 0.964 | 0.830 | 0.400 | 0.972 | 0.821 | 0.972 |
+| 3 | 1 | 0.891 | 0.921 | 0.877 | 0.820 | 0.889 | 0.873 | 0.894 |
+| 4 | 1 | 0.881 | 0.948 | 0.771 | 0.360 | 0.952 | 0.725 | 0.944 |
+| 5 | 2 | 0.926 | 0.972 | 0.842 | 0.480 | 0.980 | 0.829 | 0.966 |
+| **Mean ± std** | | 0.902 ± 0.020 | 0.953 ± 0.020 | 0.821 ± 0.044 | **0.484 ± 0.194** | 0.948 ± 0.036 | 0.802 ± 0.058 | 0.945 ± 0.031 |
+
+Learned $\Gamma$ (diagonal): seed 1 (0.539, 0.871); seed 2 (0.758, 0.665); seed 3 (0.9988, 0.503); seed 4 (0.930, 0.593); seed 5 (0.671, 0.735).
+
+### Closing the ablation
+
+| Config | Width | KL | Training | Criterion 1 | Criterion 2 | Mean validation loss |
+|---|---|---|---|---|---|---|
+| C1 | 1 | official | official | not met | not met | ≈ 14,577 |
+| C2 | 1 | official | stabilised | not met | not met | ≈ 15,759 |
+| C3 | 16 | official | stabilised | stopped (copying) | — | — |
+| C4 | 16 | paper | stabilised | stopped (copying, frozen LR) | — | — |
+| **C5** | **16** | **none (1)** | **stabilised** | **met (5/5)** | **met** | **≈ 11,590** |
+| C6 | 1 | none (1) | stabilised | met on the letter (4/5) | not met | ≈ 13,591 |
+
+**Selected configuration: C5**, on training and validation criteria only. The selection does not depend on how C6's seed 4 is judged: C5 ranks first on validation loss regardless. The ablation is closed.
+
+Conclusions from the ablation:
+- **Width is the decisive factor.** Only the widened configuration trains reliably in every seed; at the official width, dead units persist under every training procedure and KL schedule.
+- **The KL weight also matters.** At the official width, KL weight 1 (C6) gives learning in more seeds than the official schedule (C2), and with wide networks a KL weight below 1 allows copying (C3, C4). Both fixes are needed.
+
+### Refined diagnosis
+
+**(a) Validity of the dead-unit check.** The first version fed random $z \sim N(0,1)$. It was repeated with the model's own posterior $z$ and on training, validation and test data separately (`experiments/spy/check_dead_relu.py`). For all narrow configurations (C1, C2, C6) the verdicts are unchanged: dead units are zero for every input in every period. An alternative explanation — units active only in turbulent training periods — is therefore rejected. C5's networks are alive in all periods (28–63% zero activations, normal for ReLU layers).
+
+**(b) Dead at initialisation** (`experiments/spy/check_init_and_sigma.py`). Untrained models built with the same seeds show exactly the trained pattern: seed 1 dead/dead, seed 2 dead/alive, seed 3 alive/dead, seeds 4–5 dead/dead. The pattern is also identical across C1, C2 and C6, which share initial weights per seed. The dead units are dead from the start, fixed by the random initialisation; no training procedure can revive them. This explains why neither stabilisation (C2) nor the KL change (C6) fixed the narrow model.
+
+**(c) Posterior labelling through $d_t$.** A dead emission network still outputs a constant Gaussian, with different constants per regime (training data, C6):
+
+| Seed | Regime 0 (mean, std) | Regime 1 (mean, std) | Train loss, epoch 40 |
+|---|---|---|---|
+| 1 | −0.984, 0.658 | 0.246, 0.714 | 1.459 |
+| 2 | 0.069, 0.473 | −0.087, 1.422 | 1.295 |
+| 3 | −0.006, 0.851 (alive, varies) | 0.315, 0.461 | 1.206 |
+| 4 | −0.000, 0.820 | 0.084, 0.429 | 1.415 |
+| 5 | −0.086, 1.394 | 0.071, 0.457 | 1.296 |
+
+In seeds 2 and 5 one regime is narrow and the other wide. The training objective weights each regime's likelihood by the posterior $q_{\phi_d}(d_t)$, which sees $y_t$ through $A_t$; the posterior can assign calm days to the narrow regime and volatile days to the wide one, i.e. label each day after seeing it. This yields training losses well below 1.419 with no working emission network. At forecast time the regime is drawn from the prior $\Gamma$, with no access to $y_{T+1}$, so the forecast is a near-fixed mixture — consistent with these seeds' poor crash coverage (0.40, 0.48). This is the same class of leak as the copying of $y_t$ into $z_t$ in C3/C4, through the discrete latent instead. Seed 4 has differing constants (0.82 / 0.43) yet remained stuck at 1.415; that case is not explained.
+
+**(d) Weaknesses of the pre-specified criteria**, recorded rather than corrected after the fact:
+1. Criterion 1 has no margin below 1.419; a stuck seed can pass by a negligible amount (C6 seed 4).
+2. A training loss below 1.419 is not sufficient evidence of forecasting ability, because posterior labelling through $d_t$ can produce it (C6 seeds 2, 5).
+
+Neither weakness affects the selection: C5 meets both requirements clearly and ranks first on validation loss.
+
+---
+
+## 13. Conformal recalibration: split conformal vs ACI
+
+Script: `experiments/spy/conformal_spy.py`; methods in `ds3m/conformal.py`. Results: `experiments/spy/conformal_results.csv`, `experiments/spy/conformal_{split,aci}_*.csv`. Predictions were recorded in Section 11 before this was run.
+
+**Method.**
+- Conformity score per day: $s_t = |y_t - c_t| / w_t$, with $c_t$ the interval centre and $w_t$ its half-width. Recalibrated interval: $[c_t - q\,w_t,\; c_t + q\,w_t]$. Model-agnostic; uses only the saved interval bounds.
+- **Split conformal:** $\hat q$ is the conformal $(1-\alpha)$ quantile of the 2016–2018 calibration scores, with the finite-sample correction $k = \lceil (n+1)(1-\alpha) \rceil$; applied unchanged to the whole test period.
+- **ACI** (Gibbs & Candès, 2021): $q_t$ is the conformal $(1-\alpha_t)$ quantile of all scores observed before day $t$ (calibration plus earlier test days); $\alpha_{t+1} = \alpha_t + \gamma(\alpha - \mathrm{err}_t)$, with $\gamma = 0.005$ (the authors' default, fixed in advance, not tuned). Implementation choice: when $\alpha_t \le 0$, $q_t$ is capped at the largest score observed so far instead of an infinite interval.
+- Models: GARCH-N, GARCH-t, and the selected configuration C5 (five seeds).
+
+**Split-conformal factors and ACI range**
+
+| Model | Split $\hat q$ | ACI $q_t$ range |
+|---|---|---|
+| GARCH-N | 0.870 | 0.84–1.10 |
+| GARCH-t | 0.913 | 0.86–1.08 |
+| C5 seeds 1–5 | 0.954, 0.911, 0.948, 0.926, 1.019 | 0.95–1.20, 0.91–1.28, 0.95–1.18, 0.92–1.16, 1.01–1.28 |
+
+**Results (90% coverage; mean width in daily log-return units)**
+
+| Model | Method | Overall | 2019 | COVID crash | 2022 | Mean width | Kupiec p | Christoffersen p |
+|---|---|---|---|---|---|---|---|---|
+| GARCH-N | raw | 0.909 | 0.944 | 0.80 | 0.865 | 0.036 | 0.223 | 0.632 |
+| GARCH-N | split | 0.869 | 0.917 | 0.76 | 0.805 | 0.031 | 0.000 | 0.996 |
+| GARCH-N | ACI | 0.900 | 0.909 | 0.78 | 0.876 | 0.034 | 1.000 | 0.975 |
+| GARCH-t | raw | 0.905 | 0.937 | 0.80 | 0.861 | 0.035 | 0.545 | 0.509 |
+| GARCH-t | split | 0.877 | 0.921 | 0.76 | 0.829 | 0.032 | 0.005 | 0.870 |
+| GARCH-t | ACI | 0.900 | 0.913 | 0.80 | 0.880 | 0.034 | 1.000 | 0.801 |
+| C5 (5 seeds) | raw | 0.877 ± 0.011 | — | 0.804 ± 0.038 | 0.859 ± 0.010 | 0.0319 | 3 of 5 reject | all pass |
+| C5 (5 seeds) | split | 0.858 ± 0.012 | — | 0.780 ± 0.060 | 0.843 ± 0.014 | 0.0303 | 5 of 5 reject | all pass |
+| C5 (5 seeds) | ACI | **0.899 ± 0.001** | — | **0.852 ± 0.018** | **0.891 ± 0.005** | 0.0346 | all pass | all pass |
+
+C5 + ACI by seed — crash: 0.84, 0.84, 0.86, 0.84, 0.88; 2022: 0.888, 0.896, 0.896, 0.884, 0.888; 2019: 0.897, 0.893, 0.897, 0.893, 0.901.
+
+**Outcome against the recorded predictions**
+- **Prediction 1 (split conformal makes test coverage worse): confirmed.** $\hat q < 1$ for 6 of 7 models — calibrated on the calm 2016–2018 period, it narrowed the intervals — and test coverage fell for all of them. Both GARCH models, which passed the overall Kupiec test before recalibration, fail it afterwards (p = 0.000, 0.005). The exception, C5 seed 5 ($\hat q = 1.02$), is essentially unchanged. A method with a finite-sample guarantee made every model worse because the calibration and test periods are not exchangeable.
+- **Prediction 2 (ACI restores coverage): confirmed.** Overall coverage is 0.90 for every model (ACI's long-run guarantee, so the overall figure no longer discriminates between models). Calm-year over-coverage is removed (GARCH-N 2019: 0.944 → 0.909).
+
+**Comparison in the stress periods**
+- **COVID crash:** C5 + ACI 0.852 ± 0.018 against GARCH + ACI 0.78 (N) and 0.80 (t). All five C5 seeds (0.84–0.88) exceed both GARCH variants. GARCH-N + ACI is *worse* than raw GARCH-N in the crash (0.80 → 0.78).
+- **2022:** C5 + ACI 0.891 ± 0.005 against 0.876 / 0.880.
+- **At essentially equal mean width** (0.035 against 0.034): DS³M + ACI does not buy coverage with wider intervals; it allocates width better across calm and turbulent days.
+
+**Interpretation.** C5's test-period misses were not clustered (Section 11), so its intervals track *when* volatility changes and ACI only needs to correct the level. GARCH's crash failure is one of timing: the shock arrives faster than ACI with $\gamma = 0.005$ can respond, and ACI had narrowed GARCH's intervals during calm 2019, leaving it worse placed when the crash began. Neither DS³M alone nor GARCH alone is calibrated under regime change; **DS³M trained stably, combined with ACI, gives the best-calibrated intervals in both stress periods at no extra average width** — the DS³M + ACI combination named in RQ1.
+
+**Caveats**
+- The crash covers 50 days: 0.852 vs 0.80 is about 2.6 more covered days. The consistency across all five seeds carries the weight, but it is one crash.
+- 2022: about 4 more covered days out of 251.
+- $\gamma$ fixed in advance (not tuned); AgACI would remove the choice.
+- No paired statistical comparison yet; coverage alone favours wide intervals, so the interval score (Gneiting & Raftery, 2007), which combines width and miss penalties, with a paired test across days, is needed for a formal comparison.
+- 200 Monte Carlo samples per DS³M forecast.
+
+---
+
 ## Open questions and pending experiments
 
-- **Ablation C6 (`stable_nokl`, running)** — closes the ablation (Section 10). Then select a configuration by the pre-specified criteria.
-- **Conformal recalibration** of the selected DS³M configuration and of GARCH: split conformal (calibrated on 2016–2018) and ACI (online). Calibration-period forecasts are now available (Section 11). Conformity score: distance from the interval centre in units of the interval half-width.
+- **Ablation closed** (Section 12); selected configuration C5.
+- **Formal comparison of C5 + ACI vs GARCH + ACI:** interval score (Gneiting & Raftery, 2007) with a paired test across days, overall and per period.
+- **AgACI** (Zaffran et al., 2022) to remove the dependence on $\gamma$.
 - **Regime usage:** posterior regime probabilities over the test period, to replace the majority-vote collapse metric.
 - **Narrow-interval hypothesis** (Section 11, weakened by the calibration-period over-coverage): test whether emission noise learned under posterior $z_t$ is too small for prior-sampled $z_{T+1}$; low priority.
 - Verify the dead-ReLU mechanism for toy seed 5.
