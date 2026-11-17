@@ -99,6 +99,8 @@ Scripts: `experiments/spy/download_spy.py`, `ds3m/data.py` (`load_spy`).
 
 ## 5. SPY: first DS³M fit (seed 3)
 
+> **Superseded in part by Section 8.** Seed 3 turned out to be the only one of five runs in which training proceeded normally under the official recipe. The coverage figures below are not representative of DS³M trained with that recipe.
+
 Scripts: `experiments/spy/train_spy.py`, `experiments/spy/evaluate_spy.py`. Results: `experiments/spy/forecasts_seed3.csv`.
 
 Learned $\Gamma = \begin{pmatrix} 0.99993 & 0.00007 \\ 0.49991 & 0.50009 \end{pmatrix}$.
@@ -123,7 +125,7 @@ Point forecasts: RMSE 0.01251 against 0.01255 for always predicting zero. No mea
 
 Interpretation: overall coverage is nominal only because over-coverage in calm years offsets under-coverage in stress periods. Intervals widen about 3.4× in the crash relative to calm years, but not enough.
 
-Caveats: single seed; training not converged (validation loss still falling at epoch 100); one value of $K$; 200 Monte Carlo samples per forecast.
+Caveats: single seed (see Section 8 for five seeds); training not converged (validation loss still falling at epoch 100); one value of $K$; 200 Monte Carlo samples per forecast.
 
 ---
 
@@ -155,11 +157,11 @@ Fitted parameters (returns in percent):
 Mean interval width in the crash: DS³M 0.093, GARCH-N 0.116, GARCH-t 0.117.
 
 Interpretation:
-- **The coverage pattern is shared by all three models**: over-coverage in calm years, under-coverage in the crash and 2022. It is not specific to DS³M.
-- DS³M vs GARCH in the crash: 39 vs 40 covered days out of 50, a one-day difference.
+- **The qualitative pattern is shared by all models**: over-coverage in calm years, under-coverage in the crash and 2022. It is not specific to DS³M; across five DS³M seeds (Section 8) the crash under-coverage is far more severe than GARCH's.
+- DS³M seed 3 vs GARCH in the crash: 39 vs 40 covered days out of 50. This near-parity does **not** hold across seeds: mean DS³M crash coverage over five seeds is 0.436 (Section 8).
 - **Heavy tails do not explain the crash under-coverage at the 90% level.** GARCH-t ($\nu \approx 7.4$) and GARCH-N give near-identical coverage; at the 5%/95% points a unit-variance $t_{7.4}$ and a Gaussian nearly coincide. Tail shape should matter at 99%, which has not yet been evaluated.
 - GARCH widens its intervals more in the crash than DS³M, with almost no coverage gain.
-- The collapsed DS³M behaves like a continuous-volatility model and performs like GARCH.
+- GARCH is fitted by maximum likelihood and gives identical results on every run; DS³M's results vary strongly with the random seed (Section 8).
 
 ---
 
@@ -186,15 +188,121 @@ Caveats:
 - Kupiec assumes independent misses; within the crash misses are likely dependent, so its p-values there are probably too small.
 - Six tests (two periods × three models): individual borderline p-values deserve limited weight, although the crash result is consistent across all models.
 - Evaluation periods were fixed before results were seen.
-- DS³M results are from one seed.
+- DS³M results are from one seed, and that seed is not representative (Section 8). The GARCH results and the main finding (whole-period tests pass, crash window fails) are unaffected.
+
+---
+
+## 8. SPY: DS³M over 5 seeds, official training recipe
+
+Script: `experiments/spy/run_seeds_spy.py` (variant `official`: date-ordered batches, no gradient clipping). Results: `experiments/spy/summary_5seeds.json`, `experiments/spy/forecasts_seed{1..5}.csv`.
+
+| Seed | Regimes used | Overall | 2019 | 2020 | COVID crash | 2021 | 2022 | 2023–2024 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 1 | 0.812 | 0.925 | 0.676 | 0.220 | 0.877 | 0.641 | 0.876 |
+| 2 | 1 | 0.927 | 0.972 | 0.834 | 0.380 | 0.972 | 0.821 | 0.982 |
+| 3 | 1 | 0.901 | 0.933 | 0.893 | 0.780 | 0.917 | 0.865 | 0.898 |
+| 4 | 1 | 0.875 | 0.948 | 0.771 | 0.340 | 0.948 | 0.701 | 0.942 |
+| 5 | 2 | 0.926 | 0.968 | 0.838 | 0.460 | 0.988 | 0.849 | 0.958 |
+| **Mean ± std** | | 0.888 ± 0.048 | 0.949 ± 0.021 | 0.802 ± 0.083 | **0.436 ± 0.211** | 0.940 ± 0.045 | 0.775 ± 0.099 | 0.931 ± 0.043 |
+
+GARCH-N / GARCH-t crash coverage for comparison: 0.800 / 0.800.
+
+Learned $\Gamma$ by seed:
+
+| Seed | $\Gamma$ |
+|---|---|
+| 1 | $\begin{pmatrix} 0.530 & 0.470 \\ 0.017 & 0.983 \end{pmatrix}$ |
+| 2 | $\begin{pmatrix} 0.969 & 0.031 \\ 0.480 & 0.520 \end{pmatrix}$ |
+| 3 | $\begin{pmatrix} 0.99993 & 0.00007 \\ 0.49991 & 0.50009 \end{pmatrix}$ |
+| 4 | $\begin{pmatrix} 0.958 & 0.042 \\ 0.445 & 0.555 \end{pmatrix}$ |
+| 5 | $\begin{pmatrix} 0.656 & 0.344 \\ 0.216 & 0.784 \end{pmatrix}$ |
+
+In four seeds one regime is near-absorbing and the other's diagonal sits at or near the 0.5 floor.
+
+Training behaviour (validation loss, printed every 10 epochs):
+
+| Seed | Behaviour | Learning rate |
+|---|---|---|
+| 1 | fell to epoch 30, then rose and plateaued | cut repeatedly, 1e-8 by epoch 90 |
+| 2 | rose almost from the start (17,067 → 21,307) | cut from epoch 30, 1e-8 by epoch 70 |
+| 3 | fell steadily (16,835 → 12,473) | stayed at 1e-3 |
+| 4 | rose from epoch 10 (14,950 → 15,251) | cut from epoch 30, 1e-8 by epoch 70 |
+| 5 | fell slowly (18,344 → 14,217) | cut to 1e-4, then 1e-5 |
+
+Interpretation:
+- **Training under the official recipe is unstable on SPY.** In seeds 1, 2 and 4 the validation loss rose early, the scheduler cut the learning rate until training effectively stopped, and the best checkpoint comes from the first 10–30 epochs, i.e. barely-trained models. Only seed 3 trained normally.
+- **Regime collapse is the norm on SPY: 4 of 5 seeds** (toy data: 1 of 5). The one seed using two regimes (5) still under-covers badly in the crash (0.46).
+- **Crash coverage varies enormously with the seed** (0.22–0.78), and averages 0.436 against GARCH's 0.800. Seed 3's near-parity with GARCH (Sections 5–6) was not representative.
+- The paper's undisclosed retraining loop (retrain until both regimes are used) would hide both the collapse rate and the seed sensitivity.
+
+Hypothesised causes (tested in Section 9 — shuffling and clipping did not help; the actual cause is dead single-unit ReLUs in the emission networks):
+- Mini-batches are taken in date order and never shuffled: each epoch ends on late-2015 data, and validation is on calmer 2016–2018 data.
+- No gradient clipping: the official `main.py` defines `clip = 10` but never applies it.
+- The validation loss includes sampled regime paths, so it is noisy; with patience 10 the scheduler may cut the learning rate on noise.
+
+Status: rerun with shuffled batches and gradient clipping at 10 (variant `stable`) — see Section 9.
+
+Two questions to keep separate in the thesis:
+1. Does the published training recipe work on financial data? (Evidence so far: no — high collapse rate, high seed sensitivity, concealed by the retraining loop.)
+2. Does DS³M work on financial data when trained stably? (Pending.)
+
+---
+
+## 9. SPY: stabilised training, and the dead-ReLU diagnosis
+
+Script: `experiments/spy/run_seeds_spy.py` (variant `stable`: shuffled mini-batches, gradient-norm clipping at 10). Results: `experiments/spy/summary_stable_5seeds.json`, `experiments/spy/forecasts_stable_seed{1..5}.csv`, `experiments/spy/ds3m_spy_stable_seed{1..5}_gamma.json`.
+
+| Seed | Regimes used | Overall | 2019 | 2020 | COVID crash | 2021 | 2022 | 2023–2024 | Train loss at epoch 40 |
+|---|---|---|---|---|---|---|---|---|---|
+| 1 | 1 | 0.849 | 0.937 | 0.727 | 0.280 | 0.917 | 0.673 | 0.920 | 1.452 |
+| 2 | 1 | 0.931 | 0.976 | 0.838 | 0.400 | 0.976 | 0.825 | 0.986 | 1.118 |
+| 3 | 1 | 0.875 | 0.901 | 0.862 | 0.840 | 0.889 | 0.857 | 0.871 | 1.189 |
+| 4 | 1 | 0.901 | 0.956 | 0.802 | 0.380 | 0.960 | 0.765 | 0.960 | 1.419 |
+| 5 | 1 | 0.929 | 0.968 | 0.838 | 0.400 | 0.964 | 0.833 | 0.986 | 1.417 |
+| **Mean ± std** | | 0.897 ± 0.035 | 0.948 ± 0.030 | 0.813 ± 0.053 | **0.460 ± 0.218** | 0.941 ± 0.037 | 0.790 ± 0.074 | 0.945 ± 0.049 | |
+
+Collapsed runs: **5 of 5**. Compared with the official recipe (crash 0.436 ± 0.211, 4 of 5 collapsed), stabilisation brought no improvement.
+
+Learned $\Gamma$ (diagonal): seed 1 (0.563, 0.954); seed 2 (0.946, 0.537); seed 3 (0.9996, 0.501); seed 4 (0.954, 0.572); seed 5 (0.999, 0.502). In every seed one diagonal entry is at or near the 0.5 floor.
+
+**Training-loss benchmark.** Training data are normalised to mean 0, std 1. A model that always predicts a fixed $N(0,1)$ has average loss $\tfrac12\log(2\pi e) \approx 1.419$, the loss of having learned nothing. Train losses are compared at epoch 40, before the KL weight starts rising (from epoch 50 the annealed KL term raises the training loss independently of fit).
+- Seeds 4 and 5 sit at 1.417–1.419, flat from epoch 10: no learning.
+- Seed 1 at 1.452: no learning.
+- Seeds 2 and 3 are well below (1.118, 1.189): real volatility dynamics were learned.
+
+**Dead-ReLU check** (`experiments/spy/check_dead_relu.py`): share of validation inputs for which each regime's emission trunk outputs exactly zero, and the variation of the predicted emission std across inputs.
+
+| Seed | Regime 0 emission | Regime 1 emission |
+|---|---|---|
+| 1 | dead (100% zero, std constant) | dead |
+| 2 | dead | alive, std nearly constant (variation 0.001) |
+| 3 | **alive** (std variation 0.29) | dead |
+| 4 | dead | dead |
+| 5 | dead | dead |
+
+**8 of 10 regime-specific emission networks are dead.**
+
+Mechanism: in the official architecture (deviation 3), each network's hidden width equals its output dimension. For a univariate series ($D = 1$) the emission trunk is $\mathrm{Linear}(12 \to 1) \to \mathrm{ReLU} \to \mathrm{Linear}(1 \to 1) \to \mathrm{ReLU}$, so all information passes through a single ReLU unit. If that unit's input is negative for every data point, it outputs zero everywhere: the emission mean and std become constants, and no gradient reaches the encoder, $z_t$ or the regimes beneath it. Whether this happens depends on the random initialisation and early updates — hence the seed lottery. This is the known "dying ReLU" phenomenon in narrow networks.
+
+Interpretation:
+- **Failure to learn** (seeds 1, 4, 5) is caused by dead emission networks in both regimes.
+- **Regime collapse is caused by a dead regime, not by the data.** In seed 3, regime 0's emission is alive and regime 1's is dead; a dead regime can only emit one fixed distribution, so the model avoids it and $\Gamma$ pushes it to the 0.5 floor. The SPY "single-regime" result should therefore not be read as evidence that SPY has one regime.
+- In seed 2 the prior $\Gamma$ favours regime 0, whose emission is dead, so forecasts have near-constant width despite some learning elsewhere.
+- **The only seed with a working emission in its forecasting regime (seed 3) reached 0.84 crash coverage, above GARCH's 0.80.**
+- The paper's own univariate experiments (toy, sleep apnea, unemployment) are exposed to the same failure mode; the official retraining loop would conceal it. Toy seed 5's collapse (Section 3) is likely the same mechanism (not yet verified).
+
+This is a precisely characterised failure mode of the published architecture, matching the scope of RQ3 (targeted modification addressing an empirically located failure).
+
+Planned modification (variant `wide`): hidden width 16 in every Gaussian network (transition, emission, posterior), with shuffling and clipping retained. Success criteria: training loss below 1.419 in most seeds, few or no dead networks, and much lower seed-to-seed variation in crash coverage.
 
 ---
 
 ## Open questions and pending experiments
 
-- **DS³M on SPY, 5 seeds** (running): collapse rate on SPY vs 1/5 on the toy data; per-period coverage as mean ± std.
+- **DS³M on SPY with widened networks** (variant `wide`, hidden width 16): does removing the single-unit bottleneck eliminate dead networks, regime collapse and seed sensitivity? Only then is a DS³M-vs-GARCH comparison a fair test of the method.
+- Verify the dead-ReLU mechanism for toy seed 5.
 - **Regime collapse:** is it robust? Variants to test — longer training to convergence; the paper's $\Gamma$ parameterisation without the 0.5 floor; $K = 3$ and $K = 4$ (classical Markov-switching studies find 2–4 regimes for equity returns: Turner, Startz & Nelson 1989; Ang & Bekaert 2002; Guidolin & Timmermann 2005, 2007; Maheu, McCurdy & Song 2012). $K$ to be chosen on validation predictive log-likelihood only.
 - **ACI / AgACI** (Gibbs & Candès 2021; Zaffran et al. 2022) on DS³M and GARCH: does online adjustment repair crash-period coverage? Requires saving DS³M's Monte Carlo samples.
 - **99% intervals** to test tail shape; requires ≥1,000 Monte Carlo samples for DS³M.
 - **Fixed model vs walk-forward refits** (committed experiment; reported whatever the outcome).
-- Save learned $\Gamma$ alongside model weights.
+- Learned $\Gamma$ is now saved next to the model weights (`*_gamma.json`) for all new runs.

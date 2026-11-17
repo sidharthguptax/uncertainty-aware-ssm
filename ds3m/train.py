@@ -3,15 +3,20 @@
 # Simplifications relative to the official code:
 # - No early stopping (theirs averages all past validation losses and rarely triggers).
 # - No retraining loop that repeats training until both regimes are used.
+# Optional stabilisation (off by default, so the official recipe is reproduced exactly):
+# - shuffle=True: shuffled mini-batches each epoch (official code goes through batches in date order).
+# - clip=10: gradient-norm clipping at 10 (official main.py defines clip=10 but never applies it).
 
 import copy
+import json
 import torch
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from ds3m.model import DS3M
 
 
-def fit(splits, seed, path, n_epochs=100, batch=64, h_dim=10, z_dim=2, K=2, tag=""):
+def fit(splits, seed, path, n_epochs=100, batch=64, h_dim=10, z_dim=2, K=2,
+        tag="", shuffle=False, clip=None):
     torch.manual_seed(seed)
     X_train, Y_train = splits["train"]
     X_valid, Y_valid = splits["valid"]
@@ -31,15 +36,21 @@ def fit(splits, seed, path, n_epochs=100, batch=64, h_dim=10, z_dim=2, K=2, tag=
             anneal = min(1.0, 0.01 + epoch / n_epochs / 2)
 
         model.train()
+        order = torch.randperm(len(X_train)) if shuffle else torch.arange(len(X_train))
+        train_loss = 0.0
         for start in range(0, len(X_train), batch):
-            xb = X_train[start:start + batch]
-            yb = Y_train[start:start + batch]
+            idx = order[start:start + batch]
+            xb, yb = X_train[idx], Y_train[idx]
             nll, kl_z, kl_d = model(xb, yb)
             n = xb.shape[0] * xb.shape[1]
             loss = (nll + anneal * (kl_z + kl_d)) / n
             optimizer.zero_grad()
             loss.backward()
+            if clip is not None:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), clip)
             optimizer.step()
+            train_loss += loss.item() * len(idx)
+        train_loss /= len(X_train)
 
         model.eval()
         with torch.no_grad():
@@ -53,9 +64,13 @@ def fit(splits, seed, path, n_epochs=100, batch=64, h_dim=10, z_dim=2, K=2, tag=
 
         if epoch % 10 == 0:
             lr = optimizer.param_groups[0]["lr"]
-            print(f"{tag} | epoch {epoch:3d} | anneal {anneal:.2f} | valid loss {valid_loss:.1f} | lr {lr:.0e}")
+            print(f"{tag} | epoch {epoch:3d} | anneal {anneal:.2f} | train loss {train_loss:.3f} "
+                  f"| valid loss {valid_loss:.1f} | lr {lr:.0e}")
 
     torch.save(best_state, path)
     model.load_state_dict(best_state)
-    print(f"{tag} | learned Gamma:\n", model.transition().detach())
+    gamma = model.transition().detach()
+    print(f"{tag} | learned Gamma:\n", gamma)
+    with open(path.replace(".pt", "_gamma.json"), "w") as f:
+        json.dump(gamma.tolist(), f)
     return best_valid
