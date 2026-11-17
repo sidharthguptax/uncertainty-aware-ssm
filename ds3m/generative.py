@@ -2,6 +2,9 @@
 # 1. Gamma = 0.5 * softmax(Linear(T0)) + 0.5 * I, so every diagonal entry is >= 0.5.
 # 2. Networks output a standard deviation via Softplus, not log Sigma (eqs. 5, 7).
 # 3. Each network is a shared 2-layer ReLU trunk followed by separate mean and std heads.
+# 7. Optional (off by default): hidden_dim widens every GaussianNet's hidden layers.
+#    The official width equals the output size, which for D = 1 is a single ReLU unit
+#    that can die (see notes/results_log.md, Section 9).
 
 import torch
 import torch.nn as nn
@@ -20,16 +23,17 @@ class Encoder(nn.Module):
 class GaussianNet(nn.Module):
     """Shared 2-layer ReLU trunk, then a mean head and a Softplus std head."""
 
-    def __init__(self, in_dim, out_dim):
+    def __init__(self, in_dim, out_dim, hidden_dim=None):
         super().__init__()
+        hidden = hidden_dim or out_dim
         self.trunk = nn.Sequential(
-            nn.Linear(in_dim, out_dim),
+            nn.Linear(in_dim, hidden),
             nn.ReLU(),
-            nn.Linear(out_dim, out_dim),
+            nn.Linear(hidden, hidden),
             nn.ReLU(),
         )
-        self.mean = nn.Linear(out_dim, out_dim)
-        self.std = nn.Sequential(nn.Linear(out_dim, out_dim), nn.Softplus())
+        self.mean = nn.Linear(hidden, out_dim)
+        self.std = nn.Sequential(nn.Linear(hidden, out_dim), nn.Softplus())
 
     def forward(self, inp):
         hidden = self.trunk(inp)
@@ -52,12 +56,12 @@ class Transition(nn.Module):
 class Generative(nn.Module):
     """Eqs. (4)-(7) with official-code networks: one GaussianNet per regime."""
 
-    def __init__(self, z_dim, h_dim, y_dim, K):
+    def __init__(self, z_dim, h_dim, y_dim, K, hidden_dim=None):
         super().__init__()
         self.K = K
-        self.f_z = nn.ModuleList([GaussianNet(z_dim + h_dim, z_dim) for _ in range(K)])
-        self.f_y = nn.ModuleList([GaussianNet(z_dim + h_dim, y_dim) for _ in range(K)])
-
+        self.f_z = nn.ModuleList([GaussianNet(z_dim + h_dim, z_dim, hidden_dim) for _ in range(K)])
+        self.f_y = nn.ModuleList([GaussianNet(z_dim + h_dim, y_dim, hidden_dim) for _ in range(K)])
+        
     def transition(self, z_prev, h_t):
         inp = torch.cat([z_prev, h_t], dim=-1)
         outs = [self.f_z[k](inp) for k in range(self.K)]

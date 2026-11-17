@@ -6,6 +6,9 @@
 # Optional stabilisation (off by default, so the official recipe is reproduced exactly):
 # - shuffle=True: shuffled mini-batches each epoch (official code goes through batches in date order).
 # - clip=10: gradient-norm clipping at 10 (official main.py defines clip=10 but never applies it).
+# - anneal_schedule="paper": KL weight rises linearly 0.01 -> 1 over the first half, then stays at 1
+#   (Appendix C). The official schedule (default) peaks at ~0.51, which lets wide networks copy y_t
+#   into z_t through the posterior (see notes/results_log.md).
 
 import copy
 import json
@@ -16,13 +19,13 @@ from ds3m.model import DS3M
 
 
 def fit(splits, seed, path, n_epochs=100, batch=64, h_dim=10, z_dim=2, K=2,
-        tag="", shuffle=False, clip=None):
+        tag="", shuffle=False, clip=None, hidden_dim=None, anneal_schedule="official"):
     torch.manual_seed(seed)
     X_train, Y_train = splits["train"]
     X_valid, Y_valid = splits["valid"]
     y_dim = X_train.shape[-1]
 
-    model = DS3M(x_dim=y_dim, y_dim=y_dim, h_dim=h_dim, z_dim=z_dim, K=K)
+    model = DS3M(x_dim=y_dim, y_dim=y_dim, h_dim=h_dim, z_dim=z_dim, K=K, hidden_dim=hidden_dim)
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
     scheduler = ReduceLROnPlateau(optimizer, mode="min", factor=0.1, patience=10)
 
@@ -30,10 +33,15 @@ def fit(splits, seed, path, n_epochs=100, batch=64, h_dim=10, z_dim=2, K=2,
     best_state = None
 
     for epoch in range(1, n_epochs + 1):
-        if epoch < n_epochs / 2:
-            anneal = 0.01
+        if anneal_schedule == "official":
+            if epoch < n_epochs / 2:
+                anneal = 0.01
+            else:
+                anneal = min(1.0, 0.01 + epoch / n_epochs / 2)
+        elif anneal_schedule == "paper":
+            anneal = min(1.0, 0.01 + 0.99 * (epoch - 1) / (n_epochs / 2))
         else:
-            anneal = min(1.0, 0.01 + epoch / n_epochs / 2)
+            anneal = 1.0
 
         model.train()
         order = torch.randperm(len(X_train)) if shuffle else torch.arange(len(X_train))

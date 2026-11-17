@@ -6,10 +6,14 @@ from ds3m.train import fit
 from experiments.spy.evaluate_spy import evaluate_spy, PERIODS
 
 VARIANTS = {
-    "official": dict(shuffle=False, clip=None),
-    "stable": dict(shuffle=True, clip=10),
+    "official": dict(shuffle=False, clip=None, hidden_dim=None),
+    "stable": dict(shuffle=True, clip=10, hidden_dim=None),
+    "wide": dict(shuffle=True, clip=10, hidden_dim=16),
+    "wide_paperkl": dict(shuffle=True, clip=10, hidden_dim=16, anneal_schedule="paper"),
+    "wide_nokl": dict(shuffle=True, clip=10, hidden_dim=16, anneal_schedule="none"),
 }
-VARIANT = "stable"
+VARIANT = "wide_nokl"
+
 SEEDS = [1, 2, 3, 4, 5]
 
 splits, _, _, _ = load_spy()
@@ -18,7 +22,7 @@ summary = []
 for seed in SEEDS:
     path = f"experiments/spy/ds3m_spy_{VARIANT}_seed{seed}.pt"
     fit(splits, seed, path, tag=f"SPY {VARIANT} seed {seed}", **VARIANTS[VARIANT])
-    df = evaluate_spy(path, seed=seed)
+    df = evaluate_spy(path, seed=seed, hidden_dim=VARIANTS[VARIANT]["hidden_dim"])
     df.to_csv(f"experiments/spy/forecasts_{VARIANT}_seed{seed}.csv")
 
     row = {"seed": seed,

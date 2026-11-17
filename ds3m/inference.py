@@ -19,10 +19,10 @@ class BackwardRNN(nn.Module):
 class Posterior(nn.Module):
     """Eqs. (16)-(18): q(z_t | z_{t-1}, d_t, A_t) and q(d_t | d_{t-1}, A_t)."""
 
-    def __init__(self, z_dim, a_dim, K):
+    def __init__(self, z_dim, a_dim, K, hidden_dim=None):
         super().__init__()
         self.K = K
-        self.g_z = nn.ModuleList([GaussianNet(z_dim + a_dim, z_dim) for _ in range(K)])
+        self.g_z = nn.ModuleList([GaussianNet(z_dim + a_dim, z_dim, hidden_dim) for _ in range(K)])
         self.g_d = nn.ModuleList([nn.Linear(a_dim, K) for _ in range(K)])
 
     def z_posterior(self, z_prev, A_t):

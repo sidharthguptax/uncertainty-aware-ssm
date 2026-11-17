@@ -23,15 +23,15 @@ def kl_cat(q, p):
     return torch.sum(q * torch.log(q / p), dim=-1)
 
 class DS3M(nn.Module):
-    def __init__(self, x_dim, y_dim, h_dim, z_dim, K):
+    def __init__(self, x_dim, y_dim, h_dim, z_dim, K, hidden_dim=None):
         super().__init__()
         self.K = K
         self.z_dim = z_dim
         self.encoder = Encoder(x_dim, h_dim)
         self.transition = Transition(K)
-        self.generative = Generative(z_dim, h_dim, y_dim, K)
+        self.generative = Generative(z_dim, h_dim, y_dim, K, hidden_dim)
         self.backward_rnn = BackwardRNN(y_dim, h_dim, h_dim)
-        self.posterior = Posterior(z_dim, h_dim, K)
+        self.posterior = Posterior(z_dim, h_dim, K, hidden_dim)
 
     def forward(self, x, y):
         B, T, _ = x.shape

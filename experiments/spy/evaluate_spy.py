@@ -15,12 +15,12 @@ PERIODS = {
 }
 
 
-def evaluate_spy(path, seed=3, S=200):
+def evaluate_spy(path, seed=3, S=200, hidden_dim=None):
     torch.manual_seed(seed)
     splits, (mean, std), y_test, dates = load_spy()
     X_test, Y_test = splits["test"]
 
-    model = DS3M(x_dim=1, y_dim=1, h_dim=10, z_dim=2, K=2)
+    model = DS3M(x_dim=1, y_dim=1, h_dim=10, z_dim=2, K=2, hidden_dim=hidden_dim)
     model.load_state_dict(torch.load(path))
     model.eval()
 

@@ -297,9 +297,59 @@ Planned modification (variant `wide`): hidden width 16 in every Gaussian network
 
 ---
 
+## 10. Ablation design and pre-specified selection criteria
+
+Recorded while configuration C5 was still training on its first seed, before any of its results were available.
+
+**Purpose.** Replace sequential trial-and-error with a planned ablation in which every change targets a diagnosed mechanism, and every configuration is judged by criteria fixed in advance using training and validation data only.
+
+**Factors**
+
+| Factor | Levels | Mechanism it targets |
+|---|---|---|
+| Network hidden width | 1 (official, $= D$), 16 | dead single-unit ReLU (Section 9) |
+| KL schedule | official (0.01, peaking at ≈0.51), paper (linear 0.01 → 1, then 1), none (constant 1) | posterior copying $y_t$ into $z_t$ when the KL weight is below 1 |
+| Training procedure | official (date-ordered batches, no clipping), stabilised (shuffled batches, gradient-norm clipping at 10) | optimisation instability |
+
+**Configurations** (all five seeds, 1–5; toy hyperparameters otherwise; $K = 2$)
+
+| ID | Variant name | Width | KL schedule | Training | Status |
+|---|---|---|---|---|---|
+| C1 | `official` | 1 | official | official | complete (Section 8) |
+| C2 | `stable` | 1 | official | stabilised | complete (Section 9) |
+| C3 | `wide` | 16 | official | stabilised | stopped on seed 1 at epoch 20 |
+| C4 | `wide_paperkl` | 16 | paper | stabilised | stopped on seed 1 at epoch 30 |
+| C5 | `wide_nokl` | 16 | none | stabilised | running |
+| C6 | `stable_nokl` | 1 | none | stabilised | planned |
+
+C6 is a control: C5 differs from C2 in both width and KL schedule, so C6 isolates the effect of the KL schedule at the official width (the dead-ReLU mechanism predicts it should not fix the narrow model).
+
+**Observations from the stopped runs** (training and validation behaviour only; no test-period results were computed):
+- C3, seed 1: training loss −1.95 (epoch 10) and −2.90 (epoch 20), i.e. near-zero predicted uncertainty on training data; validation loss 115,853 and 124,402 (≈8× earlier runs); learning rate cut to 1e-4 by epoch 20. Interpretation: with the KL weight at 0.01, the posterior (which sees $y_t$ through $A_t$) copies $y_t$ into $z_t$ and the widened emission reads it back. The narrow official networks cannot exploit this, so the official schedule only appears to work because of the bottleneck.
+- C4, seed 1: training loss −0.58 (epoch 10, KL weight 0.19), 0.36 (epoch 20), 1.22 (epoch 30); validation loss 65,990 → 51,181 → 39,844; learning rate cut to 1e-4 by epoch 20 and 1e-5 by epoch 30. Copying occurred while the KL weight was low; recovery was too slow before the scheduler froze training.
+
+Background: KL annealing (Bowman et al., 2016) was introduced to stop a latent variable from being ignored. The failure here is the reverse (the latent variable over-used). With a KL weight below 1 the objective is no longer a lower bound on the likelihood.
+
+**Selection criteria — training and validation data only**
+
+Requirements for a configuration to be considered trained reliably:
+1. Training loss at epoch 40 below 1.419 (the loss of a fixed $N(0,1)$) in at least 4 of 5 seeds. For the official KL schedule, epoch 40 precedes any rise in the KL weight; for constant-weight configurations the comparison holds throughout.
+2. In each seed, the emission network of the regime used for forecasting is not fully dead (`check_dead_relu`).
+
+Among configurations meeting both requirements, ranking is by:
+3. Mean validation loss over the five seeds (computed with KL weight 1, i.e. the negative ELBO, comparable across all configurations).
+
+Also reported for every configuration, but not used for selection: regime collapse rate; seed-to-seed standard deviation of the validation loss.
+
+**Test-period metrics** (overall and per-period coverage, Kupiec and Christoffersen tests) are computed for every completed configuration and reported in full, but **are not used to choose a configuration**. Note for transparency: test-period coverage of C1 and C2 had already been viewed before these criteria were written; the criteria above do not use it.
+
+**Stopping rule.** The ablation is closed once C5 and C6 are complete. No configurations are added in response to test-period results. If no configuration meets the requirements, the finding is that DS³M cannot be trained reliably on SPY with these settings, with the documented mechanisms; the calibration comparison then proceeds with GARCH and the best-validated DS³M configuration, reported with that caveat.
+
+---
+
 ## Open questions and pending experiments
 
-- **DS³M on SPY with widened networks** (variant `wide`, hidden width 16): does removing the single-unit bottleneck eliminate dead networks, regime collapse and seed sensitivity? Only then is a DS³M-vs-GARCH comparison a fair test of the method.
+- **Ablation C5 (`wide_nokl`, running) and C6 (`stable_nokl`, planned)** — Section 10. Selection by the pre-specified criteria; the selected configuration is then compared with GARCH on the test period.
 - Verify the dead-ReLU mechanism for toy seed 5.
 - **Regime collapse:** is it robust? Variants to test — longer training to convergence; the paper's $\Gamma$ parameterisation without the 0.5 floor; $K = 3$ and $K = 4$ (classical Markov-switching studies find 2–4 regimes for equity returns: Turner, Startz & Nelson 1989; Ang & Bekaert 2002; Guidolin & Timmermann 2005, 2007; Maheu, McCurdy & Song 2012). $K$ to be chosen on validation predictive log-likelihood only.
 - **ACI / AgACI** (Gibbs & Candès 2021; Zaffran et al. 2022) on DS³M and GARCH: does online adjustment repair crash-period coverage? Requires saving DS³M's Monte Carlo samples.
