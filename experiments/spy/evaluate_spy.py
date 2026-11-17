@@ -15,9 +15,9 @@ PERIODS = {
 }
 
 
-def evaluate_spy(path, seed=3, S=200, hidden_dim=None, target="test"):
+def evaluate_spy(path, seed=3, S=200, hidden_dim=None, target="test", **data_kwargs):
     torch.manual_seed(seed)
-    splits, (mean, std), y_test, dates = load_spy(target=target)
+    splits, (mean, std), y_test, dates = load_spy(target=target, **data_kwargs)
     X_test, Y_test = splits["test"]
 
     model = DS3M(x_dim=1, y_dim=1, h_dim=10, z_dim=2, K=2, hidden_dim=hidden_dim)

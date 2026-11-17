@@ -623,6 +623,26 @@ The crash result does not depend on the lag choice: seeds 2, 3 and 5 are signifi
 
 ---
 
+## 15. Fixed model vs walk-forward refits: design (recorded before running)
+
+Script: `experiments/spy/run_refits_spy.py`. Output: `experiments/spy/forecasts_refit_wide_nokl_seed{1..5}.csv` (one 2019–2024 series per seed), refit weights `experiments/spy/ds3m_spy_refit{year}_seed{seed}.pt`.
+
+**Question.** DS³M assumes a time-homogeneous regime process (Section 1; constant $\Gamma$). Does periodic refitting, which makes $\Gamma$ and all other parameters piecewise constant across refit windows, improve calibration over a single fixed model on non-stationary financial data? Committed to reporting the result whether positive or negative.
+
+**Design**
+- Configuration: C5 (selected, Section 12), seeds 1–5, each refit trained from scratch (no warm start).
+- Cadence: yearly, at the start of each test year 2019–2024 (six refits per seed).
+- Windows for test year $Y$: training 2000 to end of $Y-4$ (expanding); validation $Y-3$ to $Y-1$ (three years, fixed length); forecasts for year $Y$, one step ahead.
+- Normalisation: each refit's own training-period mean and std.
+- The 2019 refit uses exactly the fixed model's split and seed, so it doubles as a reproducibility check.
+- Evaluation: the six yearly forecast tables per seed are joined into one 2019–2024 series and compared with fixed C5 on coverage by period, Kupiec/Christoffersen tests and the interval score (raw and with ACI, ACI calibrated on the same 2016–2018 calibration scores as before).
+- GARCH counterpart (run separately): GARCH-N and GARCH-t re-estimated yearly on all data up to the end of $Y-1$. This gives GARCH slightly more recent data than DS³M's training window, so any DS³M advantage is conservative.
+- Monte Carlo samples: 200 per forecast (as for the fixed-model comparisons).
+
+**Prediction.** The 2020 refit's training data end in 2016 and its validation in 2019, so it has not seen a crash: COVID-crash coverage should be similar to the fixed model. Any benefit should appear from 2021 onwards, once 2020 enters validation and then training, and especially in 2023–2024.
+
+---
+
 ## Open questions and pending experiments
 
 - **Ablation closed** (Section 12); selected configuration C5.

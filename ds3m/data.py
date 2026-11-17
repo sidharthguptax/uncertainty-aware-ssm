@@ -40,7 +40,7 @@ def load_toy(window=20, test_len=500):
     return splits, (mean, std), y[-test_len:], d[-test_len:]
 
 def load_spy(window=20, train_end="2015-12-31", valid_end="2018-12-31",
-             path="data/spy_close.csv", target="test"):
+             path="data/spy_close.csv", target="test", test_end=None):
     close = pd.read_csv(path, index_col="Date", parse_dates=True)["SPY"]
     returns = np.log(close).diff().dropna()
     dates = returns.index
@@ -51,7 +51,8 @@ def load_spy(window=20, train_end="2015-12-31", valid_end="2018-12-31",
     train = y[:n_train]
     valid = y[n_train:n_valid]
     if target == "test":
-        start, end = n_valid, len(y)
+        start = n_valid
+        end = int((dates <= test_end).sum()) if test_end else len(y)
     else:
         start, end = n_train, n_valid
     test = y[start - window - 1:end - 1]
