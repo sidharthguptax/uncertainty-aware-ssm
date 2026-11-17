@@ -319,8 +319,8 @@ Recorded while configuration C5 was still training on its first seed, before any
 | C2 | `stable` | 1 | official | stabilised | complete (Section 9) |
 | C3 | `wide` | 16 | official | stabilised | stopped on seed 1 at epoch 20 |
 | C4 | `wide_paperkl` | 16 | paper | stabilised | stopped on seed 1 at epoch 30 |
-| C5 | `wide_nokl` | 16 | none | stabilised | running |
-| C6 | `stable_nokl` | 1 | none | stabilised | planned |
+| C5 | `wide_nokl` | 16 | none | stabilised | complete (Section 11) |
+| C6 | `stable_nokl` | 1 | none | stabilised | running |
 
 C6 is a control: C5 differs from C2 in both width and KL schedule, so C6 isolates the effect of the KL schedule at the official width (the dead-ReLU mechanism predicts it should not fix the narrow model).
 
@@ -347,9 +347,75 @@ Also reported for every configuration, but not used for selection: regime collap
 
 ---
 
+## 11. Ablation C5: wide networks, KL weight 1 (`wide_nokl`)
+
+Script: `experiments/spy/run_seeds_spy.py` (variant `wide_nokl`: hidden width 16, constant KL weight 1, shuffled batches, gradient clipping at 10). Results: `experiments/spy/summary_wide_nokl_5seeds.json`, `experiments/spy/forecasts_wide_nokl_seed{1..5}.csv`, `experiments/spy/ds3m_spy_wide_nokl_seed{1..5}_gamma.json`.
+
+### Pre-specified criteria (training and validation only)
+
+| Seed | Train loss, epoch 40 | Lowest printed validation loss | Emission networks (zero activations; std variation) |
+|---|---|---|---|
+| 1 | 1.171 | 11,814 | alive: 33% / 40%; 0.29 / 0.29 |
+| 2 | 1.170 | 11,850 | alive: 50% / 28%; 0.28 / 0.27 |
+| 3 | 1.171 | 11,762 | alive: 40% / 33%; 0.31 / 0.31 |
+| 4 | 1.174 | 11,797 | alive: 39% / 63%; 0.29 / 0.29 |
+| 5 | 1.143 | 10,728 | alive: 34% / 44%; 0.37 / 0.36 |
+
+(Emission columns: regime 0 / regime 1. Partial zero activations are normal for ReLU layers; "dead" means 100%.)
+
+- **Criterion 1 (train loss < 1.419 at epoch 40 in ≥ 4 of 5 seeds): met, 5 of 5.** Training converged smoothly; learning-rate cuts reflect plateaus, not rising validation loss.
+- **Criterion 2 (forecasting regime's emission not dead): met.** All 10 regime-specific emission networks are alive, with state-dependent volatility.
+- **Criterion 3 (mean validation loss):** ≈ 11,590, against ≈ 14,577 for C1 and ≈ 15,759 for C2 (means of the lowest values printed every 10 epochs; exact saved minima may be slightly lower). Seed 5, the only seed using two regimes in its forecasts, has a clearly lower validation loss (10,728) than the others (≈ 11,800).
+
+C5 meets both requirements. Final selection follows once C6 is complete.
+
+Learned $\Gamma$ (diagonal): seed 1 (0.804, 0.614); seed 2 (0.909, 0.602); seed 3 (0.858, 0.669); seed 4 (0.879, 0.654); seed 5 (0.649, 0.707). No diagonal entry sits at the 0.5 floor.
+
+### Test-period results (reported, not used for selection)
+
+| Seed | Regimes used (majority vote) | Overall | 2019 | 2020 | COVID crash | 2021 | 2022 | 2023–2024 |
+|---|---|---|---|---|---|---|---|---|
+| 1 | 1 | 0.874 | 0.889 | 0.877 | 0.820 | 0.889 | 0.845 | 0.871 |
+| 2 | 1 | 0.873 | 0.893 | 0.838 | 0.740 | 0.881 | 0.857 | 0.884 |
+| 3 | 1 | 0.890 | 0.921 | 0.870 | 0.820 | 0.901 | 0.869 | 0.890 |
+| 4 | 1 | 0.885 | 0.913 | 0.866 | 0.800 | 0.905 | 0.869 | 0.878 |
+| 5 | 2 | 0.863 | 0.889 | 0.830 | 0.840 | 0.877 | 0.857 | 0.863 |
+| **Mean ± std** | | **0.877 ± 0.011** | 0.901 ± 0.015 | 0.856 ± 0.021 | **0.804 ± 0.038** | 0.890 ± 0.012 | 0.859 ± 0.010 | 0.877 ± 0.011 |
+
+Comparison of crash and 2022 coverage: C1 0.436 ± 0.211 / 0.775 ± 0.099; GARCH-N 0.800 / 0.865; GARCH-t 0.800 / 0.861.
+
+Coverage tests (p-values):
+
+| Seed | Miss rate | Kupiec (overall) | Christoffersen (overall) | Kupiec (crash) | Kupiec (2022) |
+|---|---|---|---|---|---|
+| 1 | 0.126 | 0.001 | 0.783 | 0.086 | 0.006 |
+| 2 | 0.127 | 0.001 | 0.416 | 0.001 | 0.030 |
+| 3 | 0.110 | 0.205 | 0.247 | 0.086 | 0.111 |
+| 4 | 0.115 | 0.053 | 0.987 | 0.035 | 0.111 |
+| 5 | 0.137 | 0.000 | 0.440 | 0.189 | 0.030 |
+
+For reference, C1 (official recipe): seeds 1, 2, 4, 5 have p ≈ 0.000 on nearly every test, including Christoffersen (strong clustering of misses); seed 3 is the exception. GARCH-N / GARCH-t: overall Kupiec 0.223 / 0.545, Christoffersen 0.632 / 0.509, crash 0.035 / 0.035.
+
+### Interpretation
+
+- **Seed sensitivity is removed.** Crash coverage ranges 0.74–0.84 across seeds (std 0.038, against 0.211 for C1).
+- **Trained stably, DS³M matches GARCH in the stress periods** (crash 0.80 vs 0.80; 2022 0.86 vs 0.865) but does not beat it.
+- **DS³M's intervals are systematically too narrow, but correctly timed.** Overall miss rates 0.110–0.137 (Kupiec rejects in 3 of 5 seeds, one borderline), while Christoffersen passes in all 5 seeds: misses are spread evenly rather than clustered. The model tracks *when* volatility changes; the *level* of its intervals is too low. This is a different failure from GARCH (calibrated on average, under-covers only in the crash) and from C1 (clustered misses from near-constant intervals).
+- The same under-coverage appeared in-domain on the toy data (0.84–0.88, Section 3), so it appears to be a property of DS³M's predictive intervals rather than of financial data.
+- **Hypothesis (untested):** the emission noise is learned with $z_t$ drawn from the posterior, which has seen $y_t$; at forecast time $z_{T+1}$ comes from the prior, which has not. The emission's std may therefore be calibrated for a better-informed $z$ than forecasting provides, producing intervals that are too narrow.
+- **Implication:** a level error is what conformal recalibration corrects. This motivates DS³M + split conformal and DS³M + ACI (RQ1). Prediction to test: the correction should work better for DS³M (constant offset) than for GARCH (a crash-local timing error).
+- **Regime usage:** the majority-vote metric reports one regime in 4 of 5 seeds, yet both regimes' emission networks are alive in every seed and no $\Gamma$ diagonal is at the floor. The metric cannot distinguish an unused regime from an occasionally used one; posterior regime probabilities over the test period are needed before drawing conclusions about SPY's regime structure.
+
+Caveats: 5 seeds × 4 tests gives many p-values; the consistent patterns (overall under-coverage, absence of clustering) carry more weight than individual rejections. Validation-loss comparison uses printed values (every 10 epochs).
+
+---
+
 ## Open questions and pending experiments
 
-- **Ablation C5 (`wide_nokl`, running) and C6 (`stable_nokl`, planned)** — Section 10. Selection by the pre-specified criteria; the selected configuration is then compared with GARCH on the test period.
+- **Ablation C6 (`stable_nokl`, running)** — closes the ablation (Section 10). Then select a configuration by the pre-specified criteria.
+- **Conformal recalibration** of the selected DS³M configuration and of GARCH: split conformal (calibrated on 2016–2018) and ACI (online). Requires validation-period forecasts. Conformity score: distance from the interval centre in units of the interval half-width.
+- **Regime usage:** posterior regime probabilities over the test period, to replace the majority-vote collapse metric.
+- **Narrow-interval hypothesis** (Section 11): test whether emission noise learned under posterior $z_t$ is too small for prior-sampled $z_{T+1}$.
 - Verify the dead-ReLU mechanism for toy seed 5.
 - **Regime collapse:** is it robust? Variants to test — longer training to convergence; the paper's $\Gamma$ parameterisation without the 0.5 floor; $K = 3$ and $K = 4$ (classical Markov-switching studies find 2–4 regimes for equity returns: Turner, Startz & Nelson 1989; Ang & Bekaert 2002; Guidolin & Timmermann 2005, 2007; Maheu, McCurdy & Song 2012). $K$ to be chosen on validation predictive log-likelihood only.
 - **ACI / AgACI** (Gibbs & Candès 2021; Zaffran et al. 2022) on DS³M and GARCH: does online adjustment repair crash-period coverage? Requires saving DS³M's Monte Carlo samples.

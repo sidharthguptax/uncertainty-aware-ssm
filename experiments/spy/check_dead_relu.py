@@ -3,7 +3,7 @@ import torch
 from ds3m.model import DS3M
 from ds3m.data import load_spy
 
-VARIANT, HIDDEN = "wide_nokl", 16
+VARIANT, HIDDEN = "stable_nokl", None
 
 splits, _, _, _ = load_spy()
 X_valid, _ = splits["valid"]

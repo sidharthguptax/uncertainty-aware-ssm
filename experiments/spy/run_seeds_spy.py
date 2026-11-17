@@ -11,8 +11,9 @@ VARIANTS = {
     "wide": dict(shuffle=True, clip=10, hidden_dim=16),
     "wide_paperkl": dict(shuffle=True, clip=10, hidden_dim=16, anneal_schedule="paper"),
     "wide_nokl": dict(shuffle=True, clip=10, hidden_dim=16, anneal_schedule="none"),
+    "stable_nokl": dict(shuffle=True, clip=10, hidden_dim=None, anneal_schedule="none"),
 }
-VARIANT = "wide_nokl"
+VARIANT = "stable_nokl"
 
 SEEDS = [1, 2, 3, 4, 5]
 
